@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from collections.abc import Sequence
 import copy
 import types
 from collections import defaultdict
@@ -24,6 +25,8 @@ def fillfixtures(_fillfixtures):
             for param, val in sorted_by_dependency(item.callspec.params, fixturenames):
                 if val is not None and is_lazy_fixture(val):
                     item.callspec.params[param] = request.getfixturevalue(val.name)
+                elif val is not None and isinstance(val, Sequence) and all(is_lazy_fixture(item) for item in val):
+                    item.callspec.params[param] = [request.getfixturevalue(item.name) for item in val]
                 elif param not in item.funcargs:
                     item.funcargs[param] = request.getfixturevalue(param)
 
