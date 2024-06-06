@@ -1,17 +1,8 @@
 # -*- coding: utf-8 -*-
 import copy
-import sys
 import types
 from collections import defaultdict
 import pytest
-
-
-PY3 = sys.version_info[0] == 3
-string_type = str if PY3 else basestring
-
-
-def pytest_configure():
-    pytest.lazy_fixture = lazy_fixture
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -71,14 +62,13 @@ def pytest_make_parametrize_id(config, val, argname):
 def pytest_generate_tests(metafunc):
     yield
 
-    normalize_metafunc_calls(metafunc, 'funcargs')
-    normalize_metafunc_calls(metafunc, 'params')
+    normalize_metafunc_calls(metafunc)
 
 
-def normalize_metafunc_calls(metafunc, valtype, used_keys=None):
+def normalize_metafunc_calls(metafunc, used_keys=None):
     newcalls = []
     for callspec in metafunc._calls:
-        calls = normalize_call(callspec, metafunc, valtype, used_keys)
+        calls = normalize_call(callspec, metafunc, used_keys)
         newcalls.extend(calls)
     metafunc._calls = newcalls
 
@@ -87,44 +77,30 @@ def copy_metafunc(metafunc):
     copied = copy.copy(metafunc)
     copied.fixturenames = copy.copy(metafunc.fixturenames)
     copied._calls = []
-
-    try:
-        copied._ids = copy.copy(metafunc._ids)
-    except AttributeError:
-        # pytest>=5.3.0
-        pass
-
     copied._arg2fixturedefs = copy.copy(metafunc._arg2fixturedefs)
     return copied
 
 
-def normalize_call(callspec, metafunc, valtype, used_keys):
+def normalize_call(callspec, metafunc, used_keys):
     fm = metafunc.config.pluginmanager.get_plugin('funcmanage')
 
     used_keys = used_keys or set()
-    valtype_keys = set(getattr(callspec, valtype).keys()) - used_keys
+    keys = set(callspec.params.keys()) - used_keys
+    print(used_keys, keys)
 
-    for arg in valtype_keys:
-        val = getattr(callspec, valtype)[arg]
+    for arg in keys:
+        val = callspec.params[arg]
         if is_lazy_fixture(val):
-            try:
-                _, fixturenames_closure, arg2fixturedefs = fm.getfixtureclosure([val.name], metafunc.definition.parent)
-            except ValueError:
-                # 3.6.0 <= pytest < 3.7.0; `FixtureManager.getfixtureclosure` returns 2 values
-                fixturenames_closure, arg2fixturedefs = fm.getfixtureclosure([val.name], metafunc.definition.parent)
-            except AttributeError:
-                # pytest < 3.6.0; `Metafunc` has no `definition` attribute
-                fixturenames_closure, arg2fixturedefs = fm.getfixtureclosure([val.name], current_node)
+            fixturenames_closure, arg2fixturedefs = fm.getfixtureclosure(metafunc.definition.parent, [val.name], {})
 
-            extra_fixturenames = [fname for fname in fixturenames_closure
-                                  if fname not in callspec.params and fname not in callspec.funcargs]
+            extra_fixturenames = [fname for fname in fixturenames_closure if fname not in callspec.params]
 
             newmetafunc = copy_metafunc(metafunc)
             newmetafunc.fixturenames = extra_fixturenames
             newmetafunc._arg2fixturedefs.update(arg2fixturedefs)
             newmetafunc._calls = [callspec]
             fm.pytest_generate_tests(newmetafunc)
-            normalize_metafunc_calls(newmetafunc, valtype, used_keys | set([arg]))
+            normalize_metafunc_calls(newmetafunc, used_keys | set([arg]))
             return newmetafunc._calls
 
         used_keys.add(arg)
@@ -176,7 +152,7 @@ def _tree_to_list(trees, leave):
 
 
 def lazy_fixture(names):
-    if isinstance(names, string_type):
+    if isinstance(names, str):
         return LazyFixture(names)
     else:
         return [LazyFixture(name) for name in names]
