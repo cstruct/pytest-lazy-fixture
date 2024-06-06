@@ -89,7 +89,6 @@ def normalize_call(callspec, metafunc, used_keys):
 
     used_keys = used_keys or set()
     keys = set(callspec.params.keys()) - used_keys
-    print(used_keys, keys)
 
     for arg in keys:
         val = callspec.params[arg]
